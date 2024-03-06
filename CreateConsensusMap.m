@@ -1,24 +1,24 @@
 clear
-load('D:\CANlab_Working\BF_Mat\PIP_BF_4_6_WithoutRest3_Beta_WithoutSTS_NewBase_CC15.mat')   %%%%Load BF map from PIP
+load('C:\Users\KeBo\Documents\GitHub\KeBo2023_EmotionReg_BayesFactor\SystemComponents_Study1_AfterClusterControl.mat')   %%%%Load culster controled BF map from PIP
 PIP_LookOnly=indexLookOnly;
 PIP_ReappraisalOnly=indexReappraisalOnly;
 PIP_Overlap=indexOverlap;
 PIP_Target=indexReappraisal_D;
-BF_tstat1_PIP=BF_tstat1_CC;
-BF_tstat2_PIP=BF_tstat2_CC;
-BF_tstat3_PIP=BF_tstat3_CC;
-BF_tstat4_PIP=BF_tstat4_CC;
+BF_tstat1_PIP=CommonAppraisal_CC;
+BF_tstat2_PIP=ReappraisalOnly_CC
+BF_tstat3_PIP=NonModifiableEmo_CC;
+BF_tstat4_PIP=ModifiableEmo_CC;
 
 
-load('D:\CANlab_Working\BF_Mat\AHAB_BF_4_6_WithoutRest3_Beta_WithoutSTS_NewBase_CC15.mat')   %%%%Load BF map from AHAB
+load('C:\Users\KeBo\Documents\GitHub\KeBo2023_EmotionReg_BayesFactor\SystemComponents_Study2_AfterClusterControl.mat')   %%%%Load culster controled BF map from AHAB
 AHAB_LookOnly=indexLookOnly;
 AHAB_ReappraisalOnly=indexReappraisalOnly;
 AHAB_Overlap=indexOverlap;
 AHAB_Target=indexReappraisal_D;
-BF_tstat1_AHAB=BF_tstat1_CC;
-BF_tstat2_AHAB=BF_tstat2_CC;
-BF_tstat3_AHAB=BF_tstat3_CC;
-BF_tstat4_AHAB=BF_tstat4_CC;
+BF_tstat1_AHAB=CommonAppraisal_CC;
+BF_tstat2_AHAB=ReappraisalOnly_CC;
+BF_tstat3_AHAB=NonModifiableEmo_CC;
+BF_tstat4_AHAB=ModifiableEmo_CC;
 
 
 C1 = intersect( PIP_LookOnly,AHAB_LookOnly )
@@ -54,8 +54,8 @@ orthviews(obj3)
 indexOverlap=find(obj3.dat>Bar);
 A=zeros(242868,1);
 A(indexOverlap)=1;
-BF_tstat1_CC.dat=A;
-orthviews(BF_tstat1_CC)
+CommonAppraisal_CC.dat=A;
+orthviews(CommonAppraisal_CC)
 %%%%%%%%%%%%%%%%%%%
 
 
@@ -76,8 +76,8 @@ orthviews(obj3)
 indexReappraisalOnly=find(obj3.dat>Bar);
 A=zeros(242868,1);
 A(indexReappraisalOnly)=1;
-BF_tstat2_CC.dat=A;
-orthviews(BF_tstat2_CC)
+ReappraisalOnly_CC.dat=A;
+orthviews(ReappraisalOnly_CC)
 %%%%%%%%%%%%%%%%%%%
 
 %%%%%%%%%%%%%%%%%%%%%%%
@@ -95,7 +95,7 @@ obj3.dat=obj1.dat.*obj2.dat;
 indexLookOnly=find(obj3.dat>Bar);
 A=zeros(242868,1);
 A(indexLookOnly)=1;
-BF_tstat3_CC.dat=A;
+NonModifiableEmo_CC.dat=A;
 %%%%%%%%%%%%%%%%%%%
 
 %%%%%%%%%%%%%%%%%%%%%%%
@@ -112,17 +112,26 @@ obj3.dat=obj1.dat.*obj2.dat;
 indexReappraisal_D=find(obj3.dat>Bar);
 A=zeros(242868,1);
 A(indexReappraisal_D)=1;
-BF_tstat4_CC.dat=A;
+ModifiableEmo_CC.dat=A;
 %%%%%%%%%%%%%%%%%%%
 
 
 figure
-montage(BF_tstat2_CC)
+montage(ModifiableEmo_CC)
 
+BF_tstat1_CC=CommonAppraisal_CC;
+BF_tstat2_CC=ReappraisalOnly_CC;
+BF_tstat3_CC=NonModifiableEmo_CC;
+BF_tstat4_CC=ModifiableEmo_CC;
 
+CommonAppraisal=CommonAppraisal_CC;
+ReappraisalOnly=ReappraisalOnly_CC;
+NonModifiableEmo=NonModifiableEmo_CC;
+ModifiableEmo=ModifiableEmo_CC;
 
 %%%%%%%%%Validation check___ Compute the distance between consensus map and maps from each dataset%%%%%%%%%%
-
+%%Load the map after cluster control %%%
+load('C:\Users\KeBo\Documents\GitHub\KeBo2023_EmotionReg_BayesFactor\Final_SystemComponentMap_Consensus_AfterClusterControl.mat')
 
 Y=BF_tstat1_CC.volInfo.xyzlist(indexOverlap,:);
 X1=BF_tstat1_AHAB.volInfo.xyzlist(AHAB_Overlap,:);
