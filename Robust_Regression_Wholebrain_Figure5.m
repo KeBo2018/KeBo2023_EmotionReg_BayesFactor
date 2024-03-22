@@ -1,0 +1,378 @@
+clear
+
+
+%%%%%%%%%%%%%%%%%
+% load('D:\CANlab_Working\BF_Mat\AHAB_PIP_Combined.mat')
+load('C:\Users\KeBo\Dropbox (Dartmouth College)\2021_Ke_Bo_reappraisal_Gianaros\Data\fMRI_data\AHAB_FullData_Meta.mat')
+
+RegNeg_AHAB=image_math(Whole_Reg,Whole_Neg,'minus');
+NegNeu_AHAB=image_math(Whole_Neg,Whole_Neu,'minus');
+load('C:\Users\KeBo\Dropbox (Dartmouth College)\2021_Ke_Bo_reappraisal_Gianaros\Data\fMRI_data\PIP_FullData_Meta.mat')
+
+RegNeg_PIP=image_math(Whole_Reg,Whole_Neg,'minus');
+NegNeu_PIP=image_math(Whole_Neg,Whole_Neu,'minus');
+Reg_Neg=image_math(RegNeg_AHAB,RegNeg_PIP,'concatenate')
+Neg_Neu=image_math(NegNeu_AHAB,NegNeu_PIP,'concatenate')
+
+
+Reg_rating_AHAB=table2array(RegNeg_AHAB.metadata_table(:,9))
+Neg_rating_AHAB=table2array(RegNeg_AHAB.metadata_table(:,10))
+Neu_rating_AHAB=table2array(RegNeg_AHAB.metadata_table(:,11))
+
+Reg_rating_PIP=table2array(RegNeg_PIP.metadata_table(:,9))
+Neg_rating_PIP=table2array(RegNeg_PIP.metadata_table(:,10))
+Neu_rating_PIP=table2array(RegNeg_PIP.metadata_table(:,11))
+Success_AHAB=Neg_rating_AHAB-Reg_rating_AHAB; 
+EmoAct_AHAB=Neg_rating_AHAB-Neu_rating_AHAB;
+
+
+EmoAct_PIP=Neg_rating_PIP-Neu_rating_PIP;
+Success_PIP=Neg_rating_PIP-Reg_rating_PIP;
+
+success=[Success_AHAB;Success_PIP];
+
+Reg_Neg.X=success;
+
+image_obj=Reg_Neg;
+
+
+% Load a mask that we would like to apply to analysis/results
+
+mask = which('gray_matter_mask.img')
+
+maskdat = fmri_data(mask, 'noverbose');
+
+% Map of emotion-regulation related regions from neurosynth.org
+metaimg = which('emotion regulation_pAgF_z_FDR_0.01_8_14_2015.nii')
+
+metamask = fmri_data(metaimg, 'noverbose');
+
+
+o2 = canlab_results_fmridisplay([], 'noverbose', 'multirow', 3);
+drawnow, snapnow;
+
+% This is a basic gray-matter mask we will use for analysis:
+% It can help reduce multiple comparisons relative to whole-image analysis
+% but we should still look at what's happening in ventricles and
+% out-of-brain space to check for artifacts.
+
+o2 = addblobs(o2, region(maskdat), 'wh_montages', 1:2);
+
+% Add a title to montage 2, the axial slice montage:
+[o2, title_han] = title_montage(o2, 2, 'Mask image: Gray matter with border');
+set(title_han, 'FontSize', 18)
+
+% Visualize summary of brain coverage
+% ---------------------------------------------------------------
+% Check that we have valid data in most voxels for most subjects
+% Always look at which voxels you are analyzing. The answer may surprise
+% you!  Some software programs mask out voxels in individual analyses,
+% which may then be excluded in the group analysis.
+
+% Show summary of coverage - how many images have non-zero, non-NaN values in each voxel
+
+o2 = montage(region(desc.coverage_obj), o2, 'trans', 'transvalue', .3, 'wh_montages', 3:4);
+
+[o2, title_han] = title_montage(o2, 4, 'Coverage: Voxels included in images');
+set(title_han, 'FontSize', 18)
+
+% Visualize meta-analysis mask
+% ---------------------------------------------------------------
+o2 = montage(region(metamask), o2, 'colormap', 'wh_montages', 5:6);
+
+[o2, title_han] = title_montage(o2, 6, 'Meta-analysis mask');
+set(title_han, 'FontSize', 18)
+
+X = scale(success, 1); X(:, end+1) = 1;         % A simple design matrix, behavioral predictor + intercept
+H = X * inv(X'* X) * X';                        % The "Hat Matrix", which produces fits. Diagonals are leverage
+
+create_figure('levs', 2, 1);
+plot(success, 'o', 'MarkerFaceColor', [0 .3 .7], 'LineWidth', 3);
+set(gca, 'FontSize', 24);
+xlabel('Subject number');
+ylabel('Reappraisal success');
+
+subplot(2, 1, 2);
+plot(diag(H), 'o', 'MarkerFaceColor', [0 .3 .7], 'LineWidth', 3);
+set(gca, 'FontSize', 24);
+xlabel('Subject number');
+ylabel('Leverage');
+
+drawnow, snapnow
+
+
+image_obj = apply_mask(image_obj, maskdat);         % Mask - analyze gray-matter
+
+% 2. Image scaling: I considered arbitrary rescaling of images, e.g., by
+% the l2norm or z-scoring images. Z-scoring can cause artifactual
+% de-activations when we are looking at group effects. L2-norming is
+% sensible if there are bad scaling problems... but I'd rather minimize ad
+% hoc procedures applied to the data. Ranking each voxel is also sensible, and
+% if the predictor is ranked as well, this would implement Spearman's correlations.
+% I considered {none, l2norm images, zscoreimages, rankvoxels}, and decided
+% on ranking voxels.  For the group average (intercept), this is not  -- I'll use robust regression to help mitigate issues.
+
+image_obj = rescale(image_obj, 'rankvoxels');     % rescale images within this mask (relative activation)
+
+
+image_obj.X = scale(success, 1);
+
+image_obj.X = scale(rankdata(image_obj.X), 1);
+
+% runs the regression at each voxel and returns statistic info and creates
+% a visual image.  regress = multiple regression.
+% % Track the time it takes (about 45 sec for robust regression on Tor's 2018 laptop)
+tic
+
+% out = regress(image_obj);             % this is what we'd do for standard OLS regression
+out = regress(image_obj, 'robust');
+
+toc
+
+% out has statistic_image objects that have information about the betas
+% (slopes) b, t-values and p-values (t), degrees of freedom (df), and sigma
+% (error variance).  The critical one is out.t.
+% out =
+%
+%         b: [1x1 statistic_image]
+%         t: [1x1 statistic_image]
+%        df: [1x1 fmri_data]
+%     sigma: [1x1 fmri_data]
+
+% This is a multiple regression, and there are two output t images, one for
+% each regressor.  We've only entered one regressor, why two images?  The program always
+% adds an intercept by default.  The intercept is always the last column of the design matrix
+
+% Image   1  <--- brain contrast values correlated with "success"
+% Positive effect:   0 voxels, min p-value: 0.00001192
+% Negative effect:   0 voxels, min p-value: 0.00170529
+% Image   2 FDR q < 0.050 threshold is 0.003193
+%
+% Image   2 <--- intercept, because we have mean-centered, this is the
+% average group effect (when success = average success).  "Reapp - Look"
+% contrast in the whole group.
+% Positive effect: 3133 voxels, min p-value: 0.00000000
+% Negative effect:  51 voxels, min p-value: 0.00024068
+
+% Now let's try thresholding the image at q < .05 fdr-corrected.
+t = threshold(out.t, .05, 'fdr');
+
+% Select the predictor image we care about: (the 2nd/last image is the intercept)
+t = select_one_image(t, 1);
+
+% ...and display on a series of slices and surfaces
+% There are many options for displaying results.
+% montage and orthviews methods for statistic_image and region objects provide a good starting point.
+
+o2 = montage(t, 'trans', 'full');
+o2 = title_montage(o2, 2, 'Behavioral predictor: Reappraisal success  (q < .05 FDR)');
+snapnow
+
+
+o2 = canlab_results_fmridisplay([], 'multirow', 2);
+
+% Use multi-threshold to threshold and display the t-map:
+% Pass the fmridisplay object with montages (o2) in as an argument to use
+% that for display.  Pass out the object with updated info.
+% 'wh_montages', 1:2 tells it to plot only on the first two montages (one sagittal and one axial slice series)
+
+o2 = multi_threshold(t, o2, 'thresh', [.002 .01 .02], 'sizethresh', [10 1 1], 'wh_montages', 1:2);
+o2 = title_montage(o2, 2, 'Behavioral predictor: Reappraisal success (p < .001 one-tailed and showing extent');
+
+% Get regions from map from neurosynth.org
+% Defined above: metaimg = which('emotion regulation_pAgF_z_FDR_0.01_8_14_2015.nii')
+
+r = region(metaimg);
+
+% Add these to the bottom montages
+o2 = addblobs(o2, r, 'maxcolor', [1 0 0], 'mincolor', [.7 .2 .5], 'wh_montages', 3:4);
+
+o2 = title_montage(o2, 4, 'Neurosynth mask: Emotion regulation');
+
+
+[image_obj_untouched] = load_image_set('emotionreg', 'noverbose');
+image_obj_untouched=Reg_Neg;
+
+% attach success scores to image_obj in image_obj.X
+% Just mean-center them so we can interpret the group result
+image_obj_untouched.X = scale(success, 1);
+
+% Do a standard OLS regression and view the results:
+out = regress(image_obj_untouched, 'nodisplay');
+
+% Treshold at q < .05 FDR and display
+t_untouched = threshold(out.t, .05, 'fdr');
+
+o2 = montage(t_untouched);
+o2 = title_montage(o2, 2, 'No scaling: Behavioral predictor: Reappraisal success (q < .05 FDR)');
+o2 = title_montage(o2, 4, 'No scaling: Intercept: Group average activation');
+
+% Since we have no results for the predictor, re-threshold at p < .005
+% uncorrected and display so we can see what's there:
+
+t_untouched = threshold(t_untouched, .005, 'unc');
+
+o2 = montage(t_untouched);
+o2 = title_montage(o2, 2, 'No scaling: Behavioral predictor: Reappraisal success (p < .005 uncorrected)');
+o2 = title_montage(o2, 4, 'No scaling: Intercept: Group average activation');
+snapnow
+
+% select just the image for reappraisal success:
+t_untouched = select_one_image(t_untouched, 1);
+
+o2 = canlab_results_fmridisplay([], 'multirow', 4);
+
+t = threshold(t, .05, 'fdr');
+o2 = montage(region(t), o2, 'wh_montages', 1:2, 'colormap');
+o2 = title_montage(o2, 2, 'Reappraisal success with informed choices (q < .05 corrected)');
+
+t_untouched = threshold(t_untouched, .05, 'fdr');
+o2 = montage(region(t_untouched), o2, 'wh_montages', 3:4, 'colormap');
+o2 = title_montage(o2, 4, 'Reappraisal success with no scaling (q < .05 corrected)');
+
+% Here we'll use "multi-threshold" to display blobs at lower thresholds
+% contiguous with those at higher thresholds. We'll use uncorrected p <
+% .005 so we can see results in both maps:
+
+
+o2 = multi_threshold(t, o2, 'thresh', [.002 .01 .02], 'k', [10 1 1], 'wh_montages', 5:6);
+o2 = title_montage(o2, 6, 'Reappraisal success with informed choices (p < .001 one-tailed unc, showing extent to .01 one-tailed)');
+
+o2 = multi_threshold(t_untouched, o2, 'thresh', [.002 .01 .02], 'k', [10 1 1], 'wh_montages', 7:8);
+o2 = title_montage(o2, 8, 'Reappraisal success with no scaling (p < .001 unc, showing extent to .01 one-tailed)');
+
+% One-tailed results are the default in SPM and FSL - so this is what you'd
+% get with 0.001 in SPM.
+
+% Select the Success regressor map
+r = region(t);
+
+% Autolabel regions and print a table
+r = table(r);
+
+% Make a montage showing each significant region
+montage(r, 'colormap', 'regioncenters');
+
+
+r = extract_data(r, image_obj);
+
+% Select only regions with 3+ voxels
+% wh = cat(1, r.numVox) < 3;
+% r(wh) = [];
+
+% Set up the scatterplots
+nrows = floor(sqrt(length(r)));
+ncols = ceil(length(r) ./ nrows);
+create_figure('scatterplot_region', nrows, ncols);
+
+% Make a loop and plot each region
+for i = 1:length(r)
+
+    subplot(nrows, ncols, i);
+
+    % Use this line for non-robust correlations:
+    %plot_correlation_samefig(r(i).dat, datno16.X);
+
+    % Use this line for robust correlations:
+    plot_correlation_samefig(r(i).dat, image_obj.X, [], 'k', 0, 1);
+
+    set(gca, 'FontSize', 12);
+    xlabel('Reappraise - Look Neg brain response');
+    ylabel('Reappraisal success');
+
+    % input('Press a key to continue');
+
+end
+
+
+r = region(metaimg);
+
+% Extract data from all regions
+r = extract_data(r, image_obj);
+
+% Select only regions with 20+ voxels
+wh = cat(1, r.numVox) < 20;
+r(wh) = [];
+
+r = table(r);
+
+% Make a montage showing each significant region
+montage(r, 'colormap', 'regioncenters');
+
+% Set up the scatterplots
+nrows = floor(sqrt(length(r)));
+ncols = ceil(length(r) ./ nrows);
+create_figure('scatterplot_region', nrows, ncols);
+
+% Make a loop and plot each region
+for i = 1:length(r)
+
+    subplot(nrows, ncols, i);
+
+    % Use this line for non-robust correlations:
+    %plot_correlation_samefig(r(i).dat, datno16.X);
+
+    % Use this line for robust correlations:
+    plot_correlation_samefig(r(i).dat, image_obj.X, [], 'k', 0, 1);
+
+    set(gca, 'FontSize', 12);
+    xlabel('Brain');
+    ylabel('Success');
+    title(' ');
+
+end
+
+
+
+r = extract_data(r, image_obj);
+
+% Select only regions with 3+ voxels
+% wh = cat(1, r.numVox) < 3;
+% r(wh) = [];
+
+% Set up the scatterplots
+nrows = floor(sqrt(length(r)));
+ncols = ceil(length(r) ./ nrows);
+create_figure('scatterplot_region', nrows, ncols);
+
+% Make a loop and plot each region
+for i = 1:length(r)
+
+    subplot(nrows, ncols, i);
+
+    % Use this line for non-robust correlations:
+    %plot_correlation_samefig(r(i).dat, datno16.X);
+
+    % Use this line for robust correlations:
+    plot_correlation_samefig(r(i).dat, image_obj.X, [], 'k', 0, 1);
+
+    set(gca, 'FontSize', 12);
+    xlabel('Reappraise - Look Neg brain response');
+    ylabel('Reappraisal success');
+
+    % input('Press a key to continue');
+
+end
+
+image_obj.Y = image_obj.X;
+
+% 5-fold cross validated prediction, stratified on outcome
+
+[cverr, stats, optout] = predict(image_obj, 'algorithm_name', 'cv_lassopcrmatlab', 'nfolds', 5);
+
+% Plot cross-validated predicted outcomes vs. actual
+
+% Critical fields in stats output structure:
+% stats.Y = actual outcomes
+% stats.yfit = cross-val predicted outcomes
+% pred_outcome_r: Correlation between .yfit and .Y
+% weight_obj: Weight map used for prediction (across all subjects).
+
+% Continuous outcomes:
+
+create_figure('scatterplot');
+plot(stats.yfit, stats.Y, 'o')
+axis tight
+refline
+xlabel('Predicted reappraisal success');
+ylabel('Observed reappraisal success');
